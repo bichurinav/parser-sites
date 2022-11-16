@@ -8,51 +8,51 @@ import prettier from 'prettier';
 // const { parsed: cfg }: any = config();
 const dirname: string = path.resolve();
 
-interface HrefsMap {
+interface SitesMap {
   [SiteName: string]: {
-    css?: string[];
-    js?: string[];
-    img?: string[];
+    html: string;
+    cssHrefs?: string[];
+    jsHrefs?: string[];
+    imgHrefs?: string[];
   };
 }
 
-const hrefsMap: HrefsMap = {};
+interface IGetFile {
+  ([]: string[], res: any): Promise<string | void>;
+}
 
-const requestDOM = async (
+const sitesMap: SitesMap = {};
+
+const requestSite = async (
   url: string,
-  siteName: string,
-  nameFile: string,
-  callback: any
-): Promise<string> => {
+  args: any[],
+  callback: IGetFile
+): Promise<any> => {
   try {
-    const data: string = await new Promise((resolve, reject) => {
+    await new Promise((resolve, reject) => {
       needle('get', url)
         .then((body) => {
-          resolve(callback(siteName, nameFile, body));
+          resolve(callback(args, body) as PromiseLike<string>);
         })
         .catch((err) => reject(err));
     });
-    return data;
   } catch (err) {
     throw err;
   }
 };
 
-const getHtmlFile = async (siteName: string, nameFile: string, res: any) => {
-  if (hrefsMap[siteName]) {
+const getHtmlFile: IGetFile = async ([siteName]: string[], res) => {
+  if (sitesMap[siteName]) {
     return;
   }
   try {
     const pathDirSite = path.join(dirname, 'sites', <string>siteName);
+
     await fs.mkdir(pathDirSite, {
       recursive: true,
     });
-    // await fs.writeFile(
-    //   path.join(pathDirSite, `${nameFile}.html`),
-    //   prettier.format(res.body, { parser: 'html' })
-    // );
-    const html = res.body;
 
+    const html = res.body;
     const $ = cheerio.load(html);
 
     const formatHref = (href: string): string => {
@@ -61,7 +61,6 @@ const getHtmlFile = async (siteName: string, nameFile: string, res: any) => {
       }
       return href;
     };
-
     const getCssHrefs = (): string[] => {
       const cssHrefs: string[] = [];
       $('link').each((_, el) => {
@@ -76,7 +75,6 @@ const getHtmlFile = async (siteName: string, nameFile: string, res: any) => {
       });
       return cssHrefs;
     };
-
     const getJsHrefs = (): string[] => {
       const jsHrefs: string[] = [];
 
@@ -90,7 +88,6 @@ const getHtmlFile = async (siteName: string, nameFile: string, res: any) => {
 
       return jsHrefs;
     };
-
     const getImagesHrefs = (): string[] => {
       const imgHrefs: string[] = [];
       $('img').each((_, el) => {
@@ -102,27 +99,23 @@ const getHtmlFile = async (siteName: string, nameFile: string, res: any) => {
       return imgHrefs;
     };
 
-    hrefsMap[siteName] = {
-      css: getCssHrefs(),
-      js: getJsHrefs(),
-      img: getImagesHrefs(),
+    sitesMap[siteName] = {
+      html,
+      cssHrefs: getCssHrefs(),
+      jsHrefs: getJsHrefs(),
+      imgHrefs: getImagesHrefs(),
     };
-
-    return html;
   } catch (err) {
     throw err;
   }
 };
 
-const getCssFile = async (siteName: string, nameFile: string, res: any) => {
+const getCssFile: IGetFile = async (
+  [nameFile, pathDirLibrarry]: string[],
+  res
+) => {
   try {
-    const pathDirCss = path.join(
-      dirname,
-      'sites',
-      <string>siteName,
-      'assets',
-      'css'
-    );
+    const pathDirCss = path.join(pathDirLibrarry, 'css');
     await fs.mkdir(pathDirCss, {
       recursive: true,
     });
@@ -140,43 +133,26 @@ const getCssFile = async (siteName: string, nameFile: string, res: any) => {
   }
 };
 
-async function start(url: string): Promise<string> {
+async function parse(url: string) {
   const siteName: string = url.replace(/http(s|):\/\//, '');
   const pathDirSite: string = path.join(dirname, 'sites', siteName);
-  await fs.mkdir(pathDirSite, {
-    recursive: true,
-  });
-
+  const pathDirLibrarry: string = path.join(pathDirSite, 'assets');
   try {
-    const htmlText: string = await requestDOM(
-      url,
-      siteName,
-      'index',
-      getHtmlFile
-    );
+    await requestSite(url, [siteName], getHtmlFile);
     // Взаимодействие с CSS
-    hrefsMap[siteName]['css']?.forEach(async (href) => {
+    sitesMap[siteName]['cssHrefs']?.forEach(async (href) => {
       const nameMatch = <RegExpMatchArray>href.match(/\/[\w-\_]+\.css/);
       if (nameMatch !== null) {
         const nameFile = nameMatch[0].replace(/\.\w+/, '').slice(1);
-        await requestDOM(href, siteName, nameFile, getCssFile);
-
-        //console.log(str);
-        const reg = new RegExp(
-          `<link.*rel=('|")stylesheet('|").*href=('|").*${nameFile}.*\.css.*('|").*>`
-        );
-        const $ = cheerio.load(htmlText);
+        await requestSite(href, [nameFile, pathDirLibrarry], getCssFile);
+        const $ = cheerio.load(sitesMap[siteName]['html']);
         $(`link[href*=${nameFile}]`).attr('href', `assets/css/${nameFile}.css`);
-
-        // await fs.writeFile(
-        //   path.join(pathDirSite, `${nameFile}.html`),
-        //   prettier.format(res.body, { parser: 'html' })
-        // );`
-
-        // const res = htmlText.match(new RegExp(reg));
-        // console.log(res);
-
-        //htmlText.match(new RegExp(str));
+        sitesMap[siteName]['html'] = $.html();
+        //
+        await fs.writeFile(
+          path.join(pathDirSite, `index.html`),
+          prettier.format(sitesMap[siteName]['html'], { parser: 'html' })
+        );
       }
     });
 
@@ -186,6 +162,6 @@ async function start(url: string): Promise<string> {
   }
 }
 
-start('https://retro-blues.ru/').then((message) => {
+parse('https://retro-blues.ru/').then((message) => {
   console.log(message, '\n', '');
 });
