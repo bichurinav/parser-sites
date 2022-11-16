@@ -18,15 +18,24 @@ interface HrefsMap {
 
 const hrefsMap: HrefsMap = {};
 
-const requestDOM = (
+const requestDOM = async (
   url: string,
   siteName: string,
   nameFile: string,
   callback: any
-): Promise<void> => {
-  return needle('get', url).then(async (res) => {
-    return await callback(siteName, nameFile, res);
-  });
+): Promise<string> => {
+  try {
+    const data: string = await new Promise((resolve, reject) => {
+      needle('get', url)
+        .then((body) => {
+          resolve(callback(siteName, nameFile, body));
+        })
+        .catch((err) => reject(err));
+    });
+    return data;
+  } catch (err) {
+    throw err;
+  }
 };
 
 const getHtmlFile = async (siteName: string, nameFile: string, res: any) => {
@@ -38,10 +47,10 @@ const getHtmlFile = async (siteName: string, nameFile: string, res: any) => {
     await fs.mkdir(pathDirSite, {
       recursive: true,
     });
-    await fs.writeFile(
-      path.join(pathDirSite, `${nameFile}.html`),
-      prettier.format(res.body, { parser: 'html' })
-    );
+    // await fs.writeFile(
+    //   path.join(pathDirSite, `${nameFile}.html`),
+    //   prettier.format(res.body, { parser: 'html' })
+    // );
     const html = res.body;
 
     const $ = cheerio.load(html);
@@ -98,6 +107,8 @@ const getHtmlFile = async (siteName: string, nameFile: string, res: any) => {
       js: getJsHrefs(),
       img: getImagesHrefs(),
     };
+
+    return html;
   } catch (err) {
     throw err;
   }
@@ -116,31 +127,65 @@ const getCssFile = async (siteName: string, nameFile: string, res: any) => {
       recursive: true,
     });
 
+    const cssText = res.body;
+
     await fs.writeFile(
       path.join(pathDirCss, `${nameFile}.css`),
-      prettier.format(res.body, { parser: 'css' })
+      prettier.format(cssText, { parser: 'css' })
     );
+
+    return cssText;
   } catch (err) {
     throw err;
   }
 };
 
-async function start(url: string) {
+async function start(url: string): Promise<string> {
   const siteName: string = url.replace(/http(s|):\/\//, '');
+  const pathDirSite: string = path.join(dirname, 'sites', siteName);
+  await fs.mkdir(pathDirSite, {
+    recursive: true,
+  });
+
   try {
-    requestDOM(url, siteName, 'index', getHtmlFile).then(() => {
-      hrefsMap[siteName]['css']?.forEach(async (href) => {
-        const nameMatch = <RegExpMatchArray>href.match(/\/[\w-\_]+\.css/);
-        if (nameMatch !== null) {
-          const nameFile = nameMatch[0].replace(/\.\w+/, '').slice(1);
-          await requestDOM(href, siteName, nameFile, getCssFile);
-          //
-        }
-      });
+    const htmlText: string = await requestDOM(
+      url,
+      siteName,
+      'index',
+      getHtmlFile
+    );
+    // Взаимодействие с CSS
+    hrefsMap[siteName]['css']?.forEach(async (href) => {
+      const nameMatch = <RegExpMatchArray>href.match(/\/[\w-\_]+\.css/);
+      if (nameMatch !== null) {
+        const nameFile = nameMatch[0].replace(/\.\w+/, '').slice(1);
+        await requestDOM(href, siteName, nameFile, getCssFile);
+
+        //console.log(str);
+        const reg = new RegExp(
+          `<link.*rel=('|")stylesheet('|").*href=('|").*${nameFile}.*\.css.*('|").*>`
+        );
+        const $ = cheerio.load(htmlText);
+        $(`link[href*=${nameFile}]`).attr('href', `assets/css/${nameFile}.css`);
+
+        // await fs.writeFile(
+        //   path.join(pathDirSite, `${nameFile}.html`),
+        //   prettier.format(res.body, { parser: 'html' })
+        // );`
+
+        // const res = htmlText.match(new RegExp(reg));
+        // console.log(res);
+
+        //htmlText.match(new RegExp(str));
+      }
     });
+
+    return 'Парсер отработал!';
   } catch (err) {
     throw err;
   }
 }
 
-start('https://steklim-teplim.ru/');
+start('https://retro-blues.ru/').then((message) => {
+  console.log(message, '\n', '');
+});
