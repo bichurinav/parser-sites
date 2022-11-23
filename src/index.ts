@@ -1,11 +1,9 @@
-// import { config } from 'dotenv';
 import fetch from 'node-fetch';
 import fs from 'node:fs/promises';
-import path, { format } from 'node:path';
+import path from 'node:path';
 import cheerio from 'cheerio';
 import prettier from 'prettier';
 
-// const { parsed: cfg }: any = config();
 const dirname: string = path.resolve();
 
 type img = {
@@ -265,7 +263,7 @@ async function parse(url: string) {
   }
 }
 
-parse('https://permweb.ru/').then(async (data) => {
+parse('https://ВАШ_САЙТ/').then(async (data) => {
   const {
     html,
     sitesMap,
