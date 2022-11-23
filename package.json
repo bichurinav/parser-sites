@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "nodemon ./dist/index.js"
+    "start": "node dist/index.js",
+    "ts": "npx tsc -w"
   },
   "type": "module",
   "author": "",
